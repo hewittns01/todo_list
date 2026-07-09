@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nathan's To-Do List</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f5;
+    --card: #ffffff;
+    --ink: #1f2b24;
+    --muted: #6b7a70;
+    --border: #e0e5de;
+    --accent: #1f6f54;
+    --accent-light: #e7f3ee;
+    --warn: #b45309;
+    --danger: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    padding: 24px 24px 12px;
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header h1 { margin: 0 0 4px; font-size: 1.5rem; }
+  header p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+  .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .icon-btn {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--ink);
+  }
+  .icon-btn:hover { background: var(--accent-light); }
+  #syncStatus {
+    font-size: 0.78rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #syncStatus.error { color: var(--danger); }
+  #syncStatus.ok { color: var(--accent); }
+
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px 60px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  main.with-calendar { grid-template-columns: minmax(0,1fr) 340px; }
+
+  .add-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+  .add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .add-row input[type="text"] {
+    flex: 1 1 220px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.95rem;
+  }
+  .add-row select, .add-row input[type="date"] {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: #fff;
+  }
+  .add-row button {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .add-row button:hover { background: #175a43; }
+  .add-more { margin-top: 10px; }
+  .add-more textarea, .add-more input[type="text"] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-family: inherit;
+    resize: vertical;
+    margin-top: 6px;
+  }
+  .add-more label { font-size: 0.78rem; color: var(--muted); }
+
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs button {
+    background: none;
+    border: none;
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .filters {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .filters-left { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filters select, .filters input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; }
+  .filters label { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .toggle-switch { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); cursor: pointer; }
+
+  .section-heading {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin: 20px 0 8px;
+  }
+
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .task {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .task.done { opacity: 0.55; }
+  .task.done .task-title { text-decoration: line-through; }
+  .task input[type="checkbox"] { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+  .task-body { flex: 1; min-width: 0; }
+  .task-title { font-size: 0.98rem; font-weight: 600; word-break: break-word; }
+  .task-desc { font-size: 0.82rem; color: var(--muted); margin-top: 3px; word-break: break-word; }
+  .task-notes { font-size: 0.78rem; color: var(--muted); margin-top: 3px; font-style: italic; word-break: break-word; }
+  .task-meta { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; font-size: 0.75rem; }
+  .badge { padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .badge.category-professional { background: var(--accent-light); color: var(--accent); }
+  .badge.category-personal { background: #eef1fb; color: #3949ab; }
+  .badge.priority-high { background: #fdeae8; color: var(--danger); }
+  .badge.priority-medium { background: #fff4e0; color: var(--warn); }
+  .badge.priority-low { background: #eef4ee; color: var(--muted); }
+  .badge.whenever { background: #f1eefc; color: #6b3fa0; }
+  .due { color: var(--muted); }
+  .due.overdue { color: var(--danger); font-weight: 600; }
+  .task-actions { display: flex; gap: 6px; align-items: center; }
+  .task-actions button {
+    background: none; border: none; cursor: pointer; color: var(--muted);
+    font-size: 0.95rem; padding: 4px 6px; border-radius: 6px;
+  }
+  .task-actions button:hover { background: #f0f0ee; color: var(--danger); }
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 0.9rem; }
+
+  /* Calendar */
+  .calendar-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    align-self: start;
+    position: sticky;
+    top: 16px;
+  }
+  .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .cal-header h3 { margin: 0; font-size: 1rem; }
+  .cal-nav button {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    cursor: pointer; padding: 4px 9px; font-size: 0.85rem; color: var(--ink);
+  }
+  .cal-nav button:hover { background: var(--accent-light); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-dow { font-size: 0.68rem; color: var(--muted); text-align: center; font-weight: 700; }
+  .cal-day {
+    aspect-ratio: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    border-radius: 8px; font-size: 0.8rem; position: relative; color: var(--ink);
+    cursor: default;
+  }
+  .cal-day.other-month { color: #c9cec7; }
+  .cal-day.today { border: 1.5px solid var(--accent); font-weight: 700; }
+  .cal-day.selected { background: var(--accent); color: white; }
+  .cal-dots { display: flex; gap: 2px; margin-top: 2px; }
+  .cal-dot { width: 5px; height: 5px; border-radius: 50%; }
+  .cal-dot.professional { background: var(--accent); }
+  .cal-dot.personal { background: #3949ab; }
+  .cal-legend { display: flex; gap: 12px; margin-top: 10px; font-size: 0.72rem; color: var(--muted); }
+  .cal-legend span { display: flex; align-items: center; gap: 4px; }
+  .cal-day-list { margin-top: 12px; font-size: 0.8rem; }
+  .cal-day-list-title { font-weight: 700; margin-bottom: 6px; }
+  .cal-day-list-item { padding: 4px 0; border-top: 1px solid var(--border); }
+  .cal-day-list-item:first-child { border-top: none; }
+  .cal-clear-day { background: none; border: none; color: var(--accent); font-size: 0.75rem; cursor: pointer; padding: 0; margin-top: 8px; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.75rem; padding: 20px 0 40px; max-width: 1200px; margin: 0 auto; }
+
+  /* Settings modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: none; align-items: center; justify-content: center; z-index: 50;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--card); border-radius: 12px; padding: 24px;
+    max-width: 440px; width: 90%; max-height: 85vh; overflow-y: auto;
+  }
+  .modal h2 { margin-top: 0; font-size: 1.1rem; }
+  .modal label { display: block; font-size: 0.82rem; color: var(--muted); margin: 12px 0 4px; }
+  .modal input[type="text"], .modal input[type="password"] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem;
+  }
+  .modal-actions { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
+  .modal-actions button {
+    padding: 9px 16px; border-radius: 8px; font-size: 0.85rem; cursor: pointer; border: none;
+  }
+  .btn-primary { background: var(--accent); color: white; font-weight: 600; }
+  .btn-secondary { background: #f0f0ee; color: var(--ink); }
+  .modal-note { font-size: 0.75rem; color: var(--muted); margin-top: 12px; line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Nathan's To-Do List</h1>
+    <p>Personal tracker &mdash; professional and personal tasks, separate from Task Crab.</p>
+  </div>
+  <div class="header-actions">
+    <span id="syncStatus">Not connected</span>
+    <button class="icon-btn" id="syncNowBtn">Sync now</button>
+    <button class="icon-btn" id="settingsBtn">GitHub settings</button>
+  </div>
+</header>
+
+<main id="mainGrid">
+  <div>
+    <div class="add-card">
+      <div class="add-row">
+        <input type="text" id="titleInput" placeholder="Add a task..." maxlength="200">
+        <select id="categoryInput">
+          <option value="professional">Professional</option>
+          <option value="personal">Personal</option>
+        </select>
+        <select id="priorityInput">
+          <option value="medium">Medium priority</option>
+          <option value="high">High priority</option>
+          <option value="low">Low priority</option>
+        </select>
+        <select id="dueTypeInput">
+          <option value="date">Due date</option>
+          <option value="whenever">When Time Allows</option>
+        </select>
+        <input type="date" id="dueInput">
+        <button id="addBtn">Add</button>
+      </div>
+      <div class="add-more">
+        <label for="descInput">Description (optional)</label>
+        <input type="text" id="descInput" placeholder="Short description...">
+        <label for="notesInput">Other notes (optional)</label>
+        <input type="text" id="notesInput" placeholder="Anything else worth noting...">
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="all">All</button>
+      <button class="tab-btn" data-tab="professional">Professional</button>
+      <button class="tab-btn" data-tab="personal">Personal</button>
+    </div>
+
+    <div class="filters">
+      <div class="filters-left">
+        <label><input type="checkbox" id="hideDone"> Hide completed</label>
+        <select id="sortSelect">
+          <option value="created">Sort: newest first</option>
+          <option value="due">Sort: due date</option>
+          <option value="priority">Sort: priority</option>
+        </select>
+      </div>
+      <label class="toggle-switch"><input type="checkbox" id="calendarToggle" checked> Show calendar</label>
+    </div>
+
+    <div class="list" id="list"></div>
+    <div class="section-heading" id="wheneverHeading" style="display:none;">When Time Allows</div>
+    <div class="list" id="wheneverList"></div>
+    <div class="empty" id="emptyMsg" style="display:none;">Nothing here. Add a task above.</div>
+  </div>
+
+  <aside class="calendar-panel" id="calendarPanel">
+    <div class="cal-header">
+      <h3 id="calMonthLabel"></h3>
+      <div class="cal-nav">
+        <button id="calPrev">&lsaquo;</button>
+        <button id="calToday">Today</button>
+        <button id="calNext">&rsaquo;</button>
+      </div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-legend">
+      <span><span class="cal-dot professional" style="position:static;"></span>Professional</span>
+      <span><span class="cal-dot personal" style="position:static;"></span>Personal</span>
+    </div>
+    <div id="calDayDetail"></div>
+  </aside>
+</main>
+
+<footer id="footerNote">Data lives in a linked Excel file on GitHub. Configure it via "GitHub settings" above.</footer>
+
+<div class="modal-overlay" id="settingsOverlay">
+  <div class="modal">
+    <h2>GitHub Excel sync</h2>
+    <label for="cfgOwner">Repository owner (your GitHub username)</label>
+    <input type="text" id="cfgOwner" placeholder="e.g. nathan-chawq">
+    <label for="cfgRepo">Repository name</label>
+    <input type="text" id="cfgRepo" placeholder="e.g. nathan-todo">
+    <label for="cfgPath">File path in the repo</label>
+    <input type="text" id="cfgPath" placeholder="tasks.xlsx" value="tasks.xlsx">
+    <label for="cfgBranch">Branch</label>
+    <input type="text" id="cfgBranch" placeholder="main" value="main">
+    <label for="cfgToken">Personal access token</label>
+    <input type="password" id="cfgToken" placeholder="ghp_...">
+    <p class="modal-note">
+      Create a fine-grained token at github.com/settings/tokens with read/write access to "Contents" on this repo only.
+      The token is stored in this browser's local storage and used only to talk to GitHub's API directly from this page &mdash; it isn't sent anywhere else.
+    </p>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="cfgCancel">Cancel</button>
+      <button class="btn-primary" id="cfgSave">Save &amp; sync</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const LOCAL_CACHE_KEY = 'nathan_todo_cache_v2';
+  const CONFIG_KEY = 'nathan_todo_github_config';
+  const CALENDAR_PREF_KEY = 'nathan_todo_show_calendar';
+
+  let tasks = JSON.parse(localStorage.getItem(LOCAL_CACHE_KEY) || '[]');
+  let currentTab = 'all';
+  let config = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null');
+  let fileSha = null;
+  let pushTimer = null;
+  let calMonth = new Date();
+  calMonth.setDate(1);
+  let selectedDay = null;
+
+  // ---------- helpers ----------
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function priorityWeight(p) { return { high: 0, medium: 1, low: 2 }[p] ?? 1; }
+  function todayStr() { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
+  function isOverdue(t) {
+    if (t.dueType !== 'date' || !t.dueDate || t.done) return false;
+    return t.dueDate < todayStr();
+  }
+  function saveLocalCache() { localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(tasks)); }
+
+  // ---------- Excel <-> tasks ----------
+  const COLUMNS = ['ID','Task Title','Description','Category','Priority Level','Date Created','Due Date','Notes','Completed'];
+
+  function tasksToWorkbook() {
+    const rows = [COLUMNS];
+    for (const t of tasks) {
+      rows.push([
+        t.id,
+        t.title,
+        t.description || '',
+        t.category === 'professional' ? 'Professional' : 'Personal',
+        t.priority.charAt(0).toUpperCase() + t.priority.slice(1),
+        t.dateCreated || '',
+        t.dueType === 'whenever' ? 'When Time Allows' : (t.dueDate || ''),
+        t.notes || '',
+        t.done ? 'Yes' : 'No'
+      ]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:14},{wch:32},{wch:36},{wch:14},{wch:14},{wch:14},{wch:16},{wch:32},{wch:11}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Tasks');
+    return wb;
+  }
+
+  function workbookToTasks(wb) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const result = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !r[1]) continue;
+      const dueCell = String(r[6] || '').trim();
+      const isWhenever = dueCell.toLowerCase() === 'when time allows' || dueCell === '';
+      let dueDate = null;
+      if (!isWhenever) {
+        if (dueCell instanceof Date) dueDate = dueCell.toISOString().slice(0,10);
+        else dueDate = String(dueCell).slice(0,10);
+      }
+      result.push({
+        id: String(r[0] || uid()),
+        title: String(r[1] || ''),
+        description: String(r[2] || ''),
+        category: String(r[3] || '').toLowerCase().startsWith('pers') ? 'personal' : 'professional',
+        priority: String(r[4] || 'medium').toLowerCase(),
+        dateCreated: String(r[5] || todayStr()),
+        dueType: isWhenever ? 'whenever' : 'date',
+        dueDate: dueDate,
+        notes: String(r[7] || ''),
+        done: String(r[8] || '').toLowerCase() === 'yes'
+      });
+    }
+    return result;
+  }
+
+  // ---------- GitHub sync ----------
+  function apiUrl() {
+    return `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${encodeURIComponent(config.path)}`;
+  }
+
+  function setStatus(text, cls) {
+    const el = document.getElementById('syncStatus');
+    el.textContent = text;
+    el.className = cls || '';
+  }
+
+  function isConfigured() {
+    return config && config.owner && config.repo && config.path && config.token;
+  }
+
+  async function pullFromGitHub() {
+    if (!isConfigured()) { setStatus('Not connected'); return; }
+    setStatus('Syncing…');
+    try {
+      const res = await fetch(`${apiUrl()}?ref=${encodeURIComponent(config.branch || 'main')}`, {
+        headers: { Authorization: `Bearer ${config.token}`, Accept: 'application/vnd.github+json' }
+      });
+      if (res.status === 404) {
+        fileSha = null;
+        setStatus('New file — will create on first change', 'ok');
+        return;
+      }
+      if (!res.ok) throw new Error(`GitHub error ${res.status}`);
+      const data = await res.json();
+      fileSha = data.sha;
+      const b64 = data.content.replace(/\n/g, '');
+      const wb = XLSX.read(b64, { type: 'base64' });
+      tasks = workbookToTasks(wb);
+      saveLocalCache();
+      setStatus('Synced with GitHub', 'ok');
+      render();
+    } catch (err) {
+      setStatus('Sync error: ' + err.message, 'error');
+    }
+  }
+
+  async function pushToGitHub() {
+    if (!isConfigured()) return;
+    setStatus('Saving to GitHub…');
+    try {
+      const wb = tasksToWorkbook();
+      const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+      const body = {
+        message: 'Update tasks.xlsx via Nathan\'s To-Do List',
+        content: b64,
+        branch: config.branch || 'main'
+      };
+      if (fileSha) body.sha = fileSha;
+      const res = await fetch(apiUrl(), {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+      if (res.status === 409) {
+        // sha out of date — pull latest then retry once
+        await pullFromGitHub();
+        return pushToGitHub();
+      }
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`GitHub error ${res.status}: ${errBody.slice(0,120)}`);
+      }
+      const data = await res.json();
+      fileSha = data.content.sha;
+      setStatus('Synced with GitHub', 'ok');
+    } catch (err) {
+      setStatus('Sync error: ' + err.message, 'error');
+    }
+  }
+
+  function queuePush() {
+    saveLocalCache();
+    if (!isConfigured()) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(pushToGitHub, 1200);
+  }
+
+  // ---------- Settings modal ----------
+  function openSettings() {
+    document.getElementById('cfgOwner').value = config?.owner || '';
+    document.getElementById('cfgRepo').value = config?.repo || '';
+    document.getElementById('cfgPath').value = config?.path || 'tasks.xlsx';
+    document.getElementById('cfgBranch').value = config?.branch || 'main';
+    document.getElementById('cfgToken').value = config?.token || '';
+    document.getElementById('settingsOverlay').classList.add('open');
+  }
+  function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
+
+  document.getElementById('settingsBtn').addEventListener('click', openSettings);
+  document.getElementById('cfgCancel').addEventListener('click', closeSettings);
+  document.getElementById('cfgSave').addEventListener('click', async () => {
+    config = {
+      owner: document.getElementById('cfgOwner').value.trim(),
+      repo: document.getElementById('cfgRepo').value.trim(),
+      path: document.getElementById('cfgPath').value.trim() || 'tasks.xlsx',
+      branch: document.getElementById('cfgBranch').value.trim() || 'main',
+      token: document.getElementById('cfgToken').value.trim()
+    };
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    closeSettings();
+    await pullFromGitHub();
+  });
+  document.getElementById('syncNowBtn').addEventListener('click', () => pullFromGitHub());
+
+  // ---------- Calendar ----------
+  function tasksOnDay(dateStr) {
+    return tasks.filter(t => t.dueType === 'date' && t.dueDate === dateStr &&
+      (currentTab === 'all' || t.category === currentTab));
+  }
+
+  function renderCalendar() {
+    const label = document.getElementById('calMonthLabel');
+    label.textContent = calMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const grid = document.getElementById('calGrid');
+    grid.innerHTML = '';
+    ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
+      const el = document.createElement('div');
+      el.className = 'cal-dow';
+      el.textContent = d;
+      grid.appendChild(el);
+    });
+
+    const year = calMonth.getFullYear(), month = calMonth.getMonth();
+    const firstDow = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+    const today = todayStr();
+
+    const cells = [];
+    for (let i = firstDow - 1; i >= 0; i--) cells.push({ day: daysInPrevMonth - i, other: true, month: month - 1 });
+    for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, other: false, month });
+    while (cells.length % 7 !== 0 || cells.length < 35) cells.push({ day: cells.length - (firstDow + daysInMonth) + 1, other: true, month: month + 1 });
+
+    for (const c of cells) {
+      const cellDate = new Date(year, c.month, c.day);
+      const dateStr = cellDate.toISOString().slice(0,10);
+      const el = document.createElement('div');
+      el.className = 'cal-day' + (c.other ? ' other-month' : '') + (dateStr === today ? ' today' : '') + (dateStr === selectedDay ? ' selected' : '');
+      const num = document.createElement('div');
+      num.textContent = c.day;
+      el.appendChild(num);
+
+      const dayTasks = c.other ? [] : tasksOnDay(dateStr);
+      if (dayTasks.length) {
+        const dots = document.createElement('div');
+        dots.className = 'cal-dots';
+        const cats = new Set(dayTasks.map(t => t.category));
+        cats.forEach(cat => {
+          const dot = document.createElement('div');
+          dot.className = 'cal-dot ' + cat;
+          dots.appendChild(dot);
+        });
+        el.appendChild(dots);
+      }
+      if (!c.other) {
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', () => {
+          selectedDay = selectedDay === dateStr ? null : dateStr;
+          renderCalendar();
+        });
+      }
+      grid.appendChild(el);
+    }
+
+    const detail = document.getElementById('calDayDetail');
+    detail.innerHTML = '';
+    if (selectedDay) {
+      const dayTasks = tasksOnDay(selectedDay);
+      const wrap = document.createElement('div');
+      wrap.className = 'cal-day-list';
+      const title = document.createElement('div');
+      title.className = 'cal-day-list-title';
+      title.textContent = new Date(selectedDay + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      wrap.appendChild(title);
+      if (!dayTasks.length) {
+        const none = document.createElement('div');
+        none.style.color = 'var(--muted)';
+        none.textContent = 'No tasks due this day.';
+        wrap.appendChild(none);
+      } else {
+        dayTasks.forEach(t => {
+          const item = document.createElement('div');
+          item.className = 'cal-day-list-item';
+          item.textContent = t.title;
+          wrap.appendChild(item);
+        });
+      }
+      const clear = document.createElement('button');
+      clear.className = 'cal-clear-day';
+      clear.textContent = 'Clear selection';
+      clear.addEventListener('click', () => { selectedDay = null; renderCalendar(); });
+      wrap.appendChild(clear);
+      detail.appendChild(wrap);
+    }
+  }
+
+  document.getElementById('calPrev').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
+  document.getElementById('calNext').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
+  document.getElementById('calToday').addEventListener('click', () => { calMonth = new Date(); calMonth.setDate(1); selectedDay = null; renderCalendar(); });
+
+  function applyCalendarVisibility() {
+    const show = document.getElementById('calendarToggle').checked;
+    localStorage.setItem(CALENDAR_PREF_KEY, show ? '1' : '0');
+    document.getElementById('mainGrid').classList.toggle('with-calendar', show);
+    document.getElementById('calendarPanel').style.display = show ? '' : 'none';
+  }
+
+  // ---------- Task list rendering ----------
+  function buildTaskRow(t) {
+    const row = document.createElement('div');
+    row.className = 'task' + (t.done ? ' done' : '');
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = t.done;
+    cb.addEventListener('change', () => { t.done = cb.checked; queuePush(); render(); });
+
+    const body = document.createElement('div');
+    body.className = 'task-body';
+
+    const title = document.createElement('div');
+    title.className = 'task-title';
+    title.textContent = t.title;
+    body.appendChild(title);
+
+    if (t.description) {
+      const desc = document.createElement('div');
+      desc.className = 'task-desc';
+      desc.textContent = t.description;
+      body.appendChild(desc);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'task-meta';
+
+    const catBadge = document.createElement('span');
+    catBadge.className = 'badge category-' + t.category;
+    catBadge.textContent = t.category === 'professional' ? 'Professional' : 'Personal';
+    meta.appendChild(catBadge);
+
+    const prBadge = document.createElement('span');
+    prBadge.className = 'badge priority-' + t.priority;
+    prBadge.textContent = t.priority.charAt(0).toUpperCase() + t.priority.slice(1);
+    meta.appendChild(prBadge);
+
+    if (t.dueType === 'whenever') {
+      const badge = document.createElement('span');
+      badge.className = 'badge whenever';
+      badge.textContent = 'When Time Allows';
+      meta.appendChild(badge);
+    } else if (t.dueDate) {
+      const due = document.createElement('span');
+      due.className = 'due' + (isOverdue(t) ? ' overdue' : '');
+      const d = new Date(t.dueDate + 'T00:00:00');
+      due.textContent = (isOverdue(t) ? 'Overdue: ' : 'Due ') + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      meta.appendChild(due);
+    }
+    body.appendChild(meta);
+
+    if (t.notes) {
+      const notes = document.createElement('div');
+      notes.className = 'task-notes';
+      notes.textContent = t.notes;
+      body.appendChild(notes);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'task-actions';
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '✕';
+    delBtn.title = 'Delete task';
+    delBtn.addEventListener('click', () => { tasks = tasks.filter(x => x.id !== t.id); queuePush(); render(); });
+    actions.appendChild(delBtn);
+
+    row.appendChild(cb);
+    row.appendChild(body);
+    row.appendChild(actions);
+    return row;
+  }
+
+  function render() {
+    const list = document.getElementById('list');
+    const wheneverList = document.getElementById('wheneverList');
+    const wheneverHeading = document.getElementById('wheneverHeading');
+    const hideDone = document.getElementById('hideDone').checked;
+    const sortBy = document.getElementById('sortSelect').value;
+
+    let scoped = tasks.filter(t => currentTab === 'all' || t.category === currentTab);
+    if (hideDone) scoped = scoped.filter(t => !t.done);
+
+    let dated = scoped.filter(t => t.dueType !== 'whenever');
+    let whenever = scoped.filter(t => t.dueType === 'whenever');
+
+    dated.sort((a, b) => {
+      if (sortBy === 'due') {
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return a.dueDate < b.dueDate ? -1 : 1;
+      }
+      if (sortBy === 'priority') return priorityWeight(a.priority) - priorityWeight(b.priority);
+      return b.dateCreated < a.dateCreated ? 1 : -1;
+    });
+    whenever.sort((a, b) => priorityWeight(a.priority) - priorityWeight(b.priority));
+
+    list.innerHTML = '';
+    dated.forEach(t => list.appendChild(buildTaskRow(t)));
+
+    wheneverList.innerHTML = '';
+    whenever.forEach(t => wheneverList.appendChild(buildTaskRow(t)));
+    wheneverHeading.style.display = whenever.length ? '' : 'none';
+
+    document.getElementById('emptyMsg').style.display = (dated.length === 0 && whenever.length === 0) ? 'block' : 'none';
+
+    renderCalendar();
+  }
+
+  // ---------- Add task ----------
+  document.getElementById('dueTypeInput').addEventListener('change', (e) => {
+    document.getElementById('dueInput').style.display = e.target.value === 'whenever' ? 'none' : '';
+  });
+
+  function addTask() {
+    const titleInput = document.getElementById('titleInput');
+    const title = titleInput.value.trim();
+    if (!title) return;
+    const dueType = document.getElementById('dueTypeInput').value;
+    tasks.push({
+      id: uid(),
+      title,
+      description: document.getElementById('descInput').value.trim(),
+      category: document.getElementById('categoryInput').value,
+      priority: document.getElementById('priorityInput').value,
+      dateCreated: todayStr(),
+      dueType,
+      dueDate: dueType === 'date' ? (document.getElementById('dueInput').value || null) : null,
+      notes: document.getElementById('notesInput').value.trim(),
+      done: false
+    });
+    queuePush();
+    titleInput.value = '';
+    document.getElementById('descInput').value = '';
+    document.getElementById('notesInput').value = '';
+    document.getElementById('dueInput').value = '';
+    titleInput.focus();
+    render();
+  }
+
+  document.getElementById('addBtn').addEventListener('click', addTask);
+  document.getElementById('titleInput').addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
+  document.getElementById('hideDone').addEventListener('change', render);
+  document.getElementById('sortSelect').addEventListener('change', render);
+  document.getElementById('calendarToggle').addEventListener('change', () => { applyCalendarVisibility(); renderCalendar(); });
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTab = btn.dataset.tab;
+      render();
+    });
+  });
+
+  // ---------- init ----------
+  const savedCalPref = localStorage.getItem(CALENDAR_PREF_KEY);
+  if (savedCalPref === '0') document.getElementById('calendarToggle').checked = false;
+  applyCalendarVisibility();
+
+  render();
+  if (isConfigured()) pullFromGitHub();
+</script>
+
+</body>
+</html>
