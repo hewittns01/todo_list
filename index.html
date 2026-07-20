@@ -194,14 +194,18 @@
   .badge.whenever { background: #e6e9ee; color: #35506e; }
   .due { color: var(--muted); }
   .due.overdue { color: var(--red); font-weight: 700; }
-  .task-actions { display: flex; gap: 6px; align-items: center; }
+  .task-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .task-btn-row { display: flex; gap: 6px; align-items: center; }
   .task-actions button {
     background: none; border: 1px solid var(--border); cursor: pointer; color: var(--muted);
     font-size: 0.78rem; padding: 6px 10px; border-radius: 6px; font-weight: 600;
   }
   .task-actions button.complete-btn:hover { background: var(--navy-light); color: var(--navy); border-color: var(--navy); }
   .task-actions button.restore-btn:hover { background: var(--navy-light); color: var(--navy); border-color: var(--navy); }
+  .task-actions button.edit-btn:hover { background: var(--navy-light); color: var(--navy); border-color: var(--navy); }
   .task-actions button.delete-btn:hover { background: var(--red-light); color: var(--red); border-color: var(--red); }
+  .completed-on { font-size: 0.7rem; color: var(--muted); text-align: right; line-height: 1.3; }
+  .completed-on strong { color: var(--ink); font-weight: 700; }
   .empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 0.9rem; }
 
   /* Calendar */
@@ -306,8 +310,9 @@
   }
   .modal h2 { margin-top: 0; font-size: 1.1rem; color: var(--navy); }
   .modal label { display: block; font-size: 0.82rem; color: var(--muted); margin: 12px 0 4px; }
-  .modal input[type="text"], .modal input[type="password"] {
-    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem;
+  .modal input[type="text"], .modal input[type="password"],
+  .modal select, .modal input[type="date"] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; background: #fff;
   }
   .modal-actions { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
   .modal-actions button {
@@ -455,6 +460,40 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="editOverlay">
+  <div class="modal">
+    <h2>Edit task</h2>
+    <label for="editTitle">Title</label>
+    <input type="text" id="editTitle" maxlength="200">
+    <label for="editDesc">Description</label>
+    <input type="text" id="editDesc" placeholder="Short description...">
+    <label for="editCategory">Category</label>
+    <select id="editCategory">
+      <option value="professional">Professional</option>
+      <option value="personal">Personal</option>
+    </select>
+    <label for="editPriority">Priority</label>
+    <select id="editPriority">
+      <option value="high">High priority</option>
+      <option value="medium">Medium priority</option>
+      <option value="low">Low priority</option>
+    </select>
+    <label for="editDueType">Due</label>
+    <select id="editDueType">
+      <option value="date">Due date</option>
+      <option value="whenever">When Time Allows</option>
+    </select>
+    <label for="editDue" id="editDueLabel">Due date</label>
+    <input type="date" id="editDue">
+    <label for="editNotes">Other notes</label>
+    <input type="text" id="editNotes" placeholder="Anything else worth noting...">
+    <div class="modal-actions">
+      <button class="btn-secondary" id="editCancel">Cancel</button>
+      <button class="btn-primary" id="editSave">Save changes</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const LOCAL_CACHE_KEY = 'nathan_todo_cache_v2';
   const CONFIG_KEY = 'nathan_todo_github_config';
@@ -484,7 +523,7 @@
   function saveLocalCache() { localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(tasks)); }
 
   // ---------- Excel <-> tasks ----------
-  const COLUMNS = ['ID','Task Title','Description','Category','Priority Level','Date Created','Due Date','Notes','Completed'];
+  const COLUMNS = ['ID','Task Title','Description','Category','Priority Level','Date Created','Due Date','Notes','Completed','Completed Date'];
 
   function tasksToWorkbook() {
     const rows = [COLUMNS];
@@ -498,11 +537,12 @@
         t.dateCreated || '',
         t.dueType === 'whenever' ? 'When Time Allows' : (t.dueDate || ''),
         t.notes || '',
-        t.done ? 'Yes' : 'No'
+        t.done ? 'Yes' : 'No',
+        t.completedDate || ''
       ]);
     }
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch:14},{wch:32},{wch:36},{wch:14},{wch:14},{wch:14},{wch:16},{wch:32},{wch:11}];
+    ws['!cols'] = [{wch:14},{wch:32},{wch:36},{wch:14},{wch:14},{wch:14},{wch:16},{wch:32},{wch:11},{wch:14}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Tasks');
     return wb;
@@ -515,6 +555,11 @@
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i];
       if (!r || !r[1]) continue;
+      const completedCell = r[9];
+      let completedDate = null;
+      if (completedCell instanceof Date) completedDate = completedCell.toISOString().slice(0,10);
+      else if (String(completedCell || '').trim()) completedDate = String(completedCell).slice(0,10);
+
       const dueCell = String(r[6] || '').trim();
       const isWhenever = dueCell.toLowerCase() === 'when time allows' || dueCell === '';
       let dueDate = null;
@@ -532,7 +577,8 @@
         dueType: isWhenever ? 'whenever' : 'date',
         dueDate: dueDate,
         notes: String(r[7] || ''),
-        done: String(r[8] || '').toLowerCase() === 'yes'
+        done: String(r[8] || '').toLowerCase() === 'yes',
+        completedDate: completedDate
       });
     }
     return result;
@@ -649,6 +695,56 @@
     await pullFromGitHub();
   });
   document.getElementById('syncNowBtn').addEventListener('click', () => pullFromGitHub());
+
+  // ---------- Edit task modal ----------
+  let editingId = null;
+
+  function syncEditDueVisibility() {
+    const isWhenever = document.getElementById('editDueType').value === 'whenever';
+    document.getElementById('editDue').style.display = isWhenever ? 'none' : '';
+    document.getElementById('editDueLabel').style.display = isWhenever ? 'none' : '';
+  }
+
+  function openEdit(t) {
+    editingId = t.id;
+    document.getElementById('editTitle').value = t.title || '';
+    document.getElementById('editDesc').value = t.description || '';
+    document.getElementById('editCategory').value = t.category || 'professional';
+    document.getElementById('editPriority').value = t.priority || 'medium';
+    document.getElementById('editDueType').value = t.dueType === 'whenever' ? 'whenever' : 'date';
+    document.getElementById('editDue').value = t.dueDate || '';
+    document.getElementById('editNotes').value = t.notes || '';
+    syncEditDueVisibility();
+    document.getElementById('editOverlay').classList.add('open');
+    document.getElementById('editTitle').focus();
+  }
+  function closeEdit() {
+    editingId = null;
+    document.getElementById('editOverlay').classList.remove('open');
+  }
+
+  document.getElementById('editDueType').addEventListener('change', syncEditDueVisibility);
+  document.getElementById('editCancel').addEventListener('click', closeEdit);
+  document.getElementById('editSave').addEventListener('click', () => {
+    const t = tasks.find(x => x.id === editingId);
+    if (!t) { closeEdit(); return; }
+    const title = document.getElementById('editTitle').value.trim();
+    if (!title) { document.getElementById('editTitle').focus(); return; }
+    const dueType = document.getElementById('editDueType').value;
+    t.title = title;
+    t.description = document.getElementById('editDesc').value.trim();
+    t.category = document.getElementById('editCategory').value;
+    t.priority = document.getElementById('editPriority').value;
+    t.dueType = dueType;
+    t.dueDate = dueType === 'date' ? (document.getElementById('editDue').value || null) : null;
+    t.notes = document.getElementById('editNotes').value.trim();
+    queuePush();
+    closeEdit();
+    render();
+  });
+  document.getElementById('editOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'editOverlay') closeEdit();
+  });
 
   // ---------- View toggle (Active / Archive) ----------
   function setView(view) {
@@ -915,20 +1011,30 @@
     const actions = document.createElement('div');
     actions.className = 'task-actions';
 
+    const btnRow = document.createElement('div');
+    btnRow.className = 'task-btn-row';
+
     if (opts.archived) {
       const restoreBtn = document.createElement('button');
       restoreBtn.className = 'restore-btn';
       restoreBtn.textContent = 'Restore';
       restoreBtn.title = 'Move back to active tasks';
-      restoreBtn.addEventListener('click', () => { t.done = false; queuePush(); render(); });
-      actions.appendChild(restoreBtn);
+      restoreBtn.addEventListener('click', () => { t.done = false; t.completedDate = null; queuePush(); render(); });
+      btnRow.appendChild(restoreBtn);
     } else {
+      const editBtn = document.createElement('button');
+      editBtn.className = 'edit-btn';
+      editBtn.textContent = 'Edit';
+      editBtn.title = 'Edit this task';
+      editBtn.addEventListener('click', () => openEdit(t));
+      btnRow.appendChild(editBtn);
+
       const completeBtn = document.createElement('button');
       completeBtn.className = 'complete-btn';
       completeBtn.textContent = 'Complete';
       completeBtn.title = 'Mark done and move to archive';
-      completeBtn.addEventListener('click', () => { t.done = true; queuePush(); render(); });
-      actions.appendChild(completeBtn);
+      completeBtn.addEventListener('click', () => { t.done = true; t.completedDate = todayStr(); queuePush(); render(); });
+      btnRow.appendChild(completeBtn);
     }
 
     const delBtn = document.createElement('button');
@@ -936,7 +1042,18 @@
     delBtn.textContent = '✕';
     delBtn.title = 'Delete task permanently';
     delBtn.addEventListener('click', () => { tasks = tasks.filter(x => x.id !== t.id); queuePush(); render(); });
-    actions.appendChild(delBtn);
+    btnRow.appendChild(delBtn);
+
+    actions.appendChild(btnRow);
+
+    if (opts.archived && t.completedDate) {
+      const completedEl = document.createElement('div');
+      completedEl.className = 'completed-on';
+      const cd = new Date(t.completedDate + 'T00:00:00');
+      completedEl.innerHTML = 'Completed<br><strong>' +
+        cd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + '</strong>';
+      actions.appendChild(completedEl);
+    }
 
     row.appendChild(body);
     row.appendChild(actions);
@@ -989,7 +1106,11 @@
   function renderArchive() {
     const archiveList = document.getElementById('archiveList');
     const scoped = tasks.filter(t => (currentTab === 'all' || t.category === currentTab) && t.done)
-      .sort((a, b) => (a.dateCreated < b.dateCreated ? 1 : -1));
+      .sort((a, b) => {
+        const ak = a.completedDate || a.dateCreated || '';
+        const bk = b.completedDate || b.dateCreated || '';
+        return ak < bk ? 1 : (ak > bk ? -1 : 0);
+      });
     archiveList.innerHTML = '';
     scoped.forEach(t => archiveList.appendChild(buildTaskRow(t, { archived: true })));
     document.getElementById('archiveEmptyMsg').style.display = scoped.length ? 'none' : 'block';
@@ -1015,7 +1136,8 @@
       dueType,
       dueDate: dueType === 'date' ? (document.getElementById('dueInput').value || null) : null,
       notes: document.getElementById('notesInput').value.trim(),
-      done: false
+      done: false,
+      completedDate: null
     });
     queuePush();
     titleInput.value = '';
